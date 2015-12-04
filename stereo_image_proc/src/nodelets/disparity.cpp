@@ -229,18 +229,8 @@ void DisparityNodelet::configCb(Config &config, uint32_t level)
   block_matcher_.setUniquenessRatio(config.uniqueness_ratio);
   block_matcher_.setSpeckleSize(config.speckle_size);
   block_matcher_.setSpeckleRange(config.speckle_range);
-  if (config.stereo_algorithm == stereo_image_proc::Disparity_StereoBM) { // StereoBM
-    block_matcher_.setStereoType(StereoProcessor::BM);
-    block_matcher_.setPreFilterSize(config.prefilter_size);
-    block_matcher_.setTextureThreshold(config.texture_threshold);
-  }
-  else if (config.stereo_algorithm == stereo_image_proc::Disparity_StereoSGBM) { // StereoSGBM
-    block_matcher_.setStereoType(StereoProcessor::SGBM);
-    block_matcher_.setSgbmMode(config.fullDP);
-    block_matcher_.setP1(config.P1);
-    block_matcher_.setP2(config.P2);
-    block_matcher_.setDisp12MaxDiff(config.disp12MaxDiff);
-  }
+  block_matcher_.setPreFilterSize(config.prefilter_size);
+  block_matcher_.setTextureThreshold(config.texture_threshold);
 }
 
 } // namespace stereo_image_proc

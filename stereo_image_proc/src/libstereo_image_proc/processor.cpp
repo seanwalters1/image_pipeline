@@ -80,25 +80,35 @@ bool StereoProcessor::process(const sensor_msgs::ImageConstPtr& left_raw,
   return true;
 }
 
+int StereoProcessor::getDisparityRange() const
+{
+	return gpu_block_matcher_.ndisp;
+}
+
+void StereoProcessor::setDisparityRange(int range)
+{
+	range = range - (range % 8);
+	gpu_block_matcher_.ndisp = range;
+}
+
+
 void StereoProcessor::processDisparity(const cv::Mat& left_rect, const cv::Mat& right_rect,
                                        const image_geometry::StereoCameraModel& model,
                                        stereo_msgs::DisparityImage& disparity) const
 {
-  // Fixed-point disparity is 16 times the true value: d = d_fp / 16.0 = x_l - x_r.
-  static const int DPP = 16; // disparities per pixel
+  static const int DPP = 1; // disparities per pixel - GPU version is 1
   static const double inv_dpp = 1.0 / DPP;
 
-  // Block matcher produces 16-bit signed (fixed point) disparity image
-  if (current_stereo_algorithm_ == BM)
-#if OPENCV3
-    block_matcher_->compute(left_rect, right_rect, disparity16_);
-  else
-    sg_block_matcher_->compute(left_rect, right_rect, disparity16_);
-#else
-    block_matcher_(left_rect, right_rect, disparity16_);
-  else
-    sg_block_matcher_(left_rect, right_rect, disparity16_);
-#endif
+  cv::gpu::GpuMat gpu_left_rect;
+  gpu_left_rect.upload(left_rect);
+
+  cv::gpu::GpuMat gpu_right_rect;
+  gpu_right_rect.upload(right_rect);
+
+  cv::gpu::GpuMat gpu_disparity_;
+
+  gpu_block_matcher_(gpu_left_rect, gpu_right_rect, gpu_disparity_);
+  gpu_disparity_.download(disparity16_);
 
   // Fill in DisparityImage image data, converting to 32-bit float
   sensor_msgs::Image& dimage = disparity.image;

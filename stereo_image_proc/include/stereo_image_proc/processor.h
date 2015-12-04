@@ -39,6 +39,7 @@
 #include <stereo_msgs/DisparityImage.h>
 #include <sensor_msgs/PointCloud.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <opencv2/gpu/gpu.hpp>
 
 namespace stereo_image_proc {
 
@@ -56,21 +57,11 @@ class StereoProcessor
 public:
   
   StereoProcessor()
-#if OPENCV3
+    : gpu_block_matcher_(cv::gpu::StereoBM_GPU::BASIC_PRESET),
+	  block_matcher_(cv::StereoBM::BASIC_PRESET)
   {
-    block_matcher_ = cv::StereoBM::create();
-    sg_block_matcher_ = cv::StereoSGBM::create(1, 1, 10);
-#else
-    : block_matcher_(cv::StereoBM::BASIC_PRESET),
-      sg_block_matcher_()
-  {
-#endif
-  }
 
-  enum StereoType
-  {
-    BM, SGBM
-  };
+  }
 
   enum {
     LEFT_MONO        = 1 << 0,
@@ -90,11 +81,6 @@ public:
     STEREO_ALL = DISPARITY | POINT_CLOUD | POINT_CLOUD2,
     ALL = LEFT_ALL | RIGHT_ALL | STEREO_ALL
   };
-
-  inline
-  StereoType getStereoType() const {return current_stereo_algorithm_;}
-  inline
-  void setStereoType(StereoType type) {current_stereo_algorithm_ = type;}
 
   int getInterpolation() const;
   void setInterpolation(int interp);
@@ -120,8 +106,8 @@ public:
 
   // Disparity post-filtering parameters
 
-  int getTextureThreshold() const;
-  void setTextureThreshold(int threshold);
+  float getTextureThreshold() const;
+  void setTextureThreshold(float threshold);
 
   float getUniquenessRatio() const;
   void setUniquenessRatio(float ratio);
@@ -131,10 +117,6 @@ public:
 
   int getSpeckleRange() const;
   void setSpeckleRange(int range);
-
-  // SGBM only
-  int getSgbmMode() const;
-  void setSgbmMode(int fullDP);
 
   int getP1() const;
   void setP1(int P1);
@@ -168,14 +150,8 @@ private:
   image_proc::Processor mono_processor_;
   
   mutable cv::Mat_<int16_t> disparity16_; // scratch buffer for 16-bit signed disparity image
-#if OPENCV3
-  mutable cv::Ptr<cv::StereoBM> block_matcher_; // contains scratch buffers for block matching
-  mutable cv::Ptr<cv::StereoSGBM> sg_block_matcher_;
-#else
-  mutable cv::StereoBM block_matcher_; // contains scratch buffers for block matching
-  mutable cv::StereoSGBM sg_block_matcher_;
-#endif
-  StereoType current_stereo_algorithm_;
+  mutable cv::gpu::StereoBM_GPU gpu_block_matcher_;
+  mutable cv::StereoBM block_matcher_;
   // scratch buffers for speckle filtering
   mutable cv::Mat_<uint32_t> labels_;
   mutable cv::Mat_<uint32_t> wavefront_;
@@ -199,48 +175,33 @@ inline void StereoProcessor::setInterpolation(int interp)
 #define STEREO_IMAGE_PROC_OPENCV2(GET, SET, TYPE, PARAM) \
 inline TYPE StereoProcessor::GET() const \
 { \
-  if (current_stereo_algorithm_ == BM) \
-    return block_matcher_.state->PARAM; \
-  return sg_block_matcher_.PARAM; \
+  return block_matcher_.state->PARAM; \
 } \
  \
 inline void StereoProcessor::SET(TYPE param) \
 { \
   block_matcher_.state->PARAM = param; \
-  sg_block_matcher_.PARAM = param; \
 }
 
-#define STEREO_IMAGE_PROC_OPENCV3(GET, SET, TYPE, GET_OPENCV, SET_OPENCV) \
+#define STEREO_IMAGE_PROC_OPENCV2_GPU(GET, SET, TYPE, PARAM) \
 inline TYPE StereoProcessor::GET() const \
 { \
-  if (current_stereo_algorithm_ == BM) \
-    return block_matcher_->GET_OPENCV(); \
-  return sg_block_matcher_->GET_OPENCV(); \
+  return gpu_block_matcher_.PARAM; \
 } \
-\
+ \
 inline void StereoProcessor::SET(TYPE param) \
 { \
-  block_matcher_->SET_OPENCV(param); \
-  sg_block_matcher_->SET_OPENCV(param); \
+  gpu_block_matcher_.PARAM = param; \
 }
 
-#if OPENCV3
-STEREO_IMAGE_PROC_OPENCV3(getPreFilterCap, setPreFilterCap, int, getPreFilterCap, setPreFilterCap)
-STEREO_IMAGE_PROC_OPENCV3(getCorrelationWindowSize, setCorrelationWindowSize, int, getBlockSize, setBlockSize)
-STEREO_IMAGE_PROC_OPENCV3(getMinDisparity, setMinDisparity, int, getMinDisparity, setMinDisparity)
-STEREO_IMAGE_PROC_OPENCV3(getDisparityRange, setDisparityRange, int, getNumDisparities, setNumDisparities)
-STEREO_IMAGE_PROC_OPENCV3(getUniquenessRatio, setUniquenessRatio, float, getUniquenessRatio, setUniquenessRatio)
-STEREO_IMAGE_PROC_OPENCV3(getSpeckleSize, setSpeckleSize, int, getSpeckleWindowSize, setSpeckleWindowSize)
-STEREO_IMAGE_PROC_OPENCV3(getSpeckleRange, setSpeckleRange, int, getSpeckleRange, setSpeckleRange)
-#else
+STEREO_IMAGE_PROC_OPENCV2_GPU(getCorrelationWindowSize, setCorrelationWindowSize, int, winSize)
+STEREO_IMAGE_PROC_OPENCV2_GPU(getTextureThreshold, setTextureThreshold, float, avergeTexThreshold)
+
 STEREO_IMAGE_PROC_OPENCV2(getPreFilterCap, setPreFilterCap, int, preFilterCap)
-STEREO_IMAGE_PROC_OPENCV2(getCorrelationWindowSize, setCorrelationWindowSize, int, SADWindowSize)
 STEREO_IMAGE_PROC_OPENCV2(getMinDisparity, setMinDisparity, int, minDisparity)
-STEREO_IMAGE_PROC_OPENCV2(getDisparityRange, setDisparityRange, int, numberOfDisparities)
 STEREO_IMAGE_PROC_OPENCV2(getUniquenessRatio, setUniquenessRatio, float, uniquenessRatio)
 STEREO_IMAGE_PROC_OPENCV2(getSpeckleSize, setSpeckleSize, int, speckleWindowSize)
 STEREO_IMAGE_PROC_OPENCV2(getSpeckleRange, setSpeckleRange, int, speckleRange)
-#endif
 
 #define STEREO_IMAGE_PROC_BM_ONLY_OPENCV2(GET, SET, TYPE, PARAM) \
 inline TYPE StereoProcessor::GET() const \
@@ -253,50 +214,8 @@ inline void StereoProcessor::SET(TYPE param) \
   block_matcher_.state->PARAM = param; \
 }
 
-#define STEREO_IMAGE_PROC_SGBM_ONLY_OPENCV2(GET, SET, TYPE, PARAM) \
-inline TYPE StereoProcessor::GET() const \
-{ \
-  return sg_block_matcher_.PARAM; \
-} \
-\
-inline void StereoProcessor::SET(TYPE param) \
-{ \
-  sg_block_matcher_.PARAM = param; \
-}
-
-#define STEREO_IMAGE_PROC_ONLY_OPENCV3(MEMBER, GET, SET, TYPE, GET_OPENCV, SET_OPENCV) \
-inline TYPE StereoProcessor::GET() const \
-{ \
-  return MEMBER->GET_OPENCV(); \
-} \
-\
-inline void StereoProcessor::SET(TYPE param) \
-{ \
-  MEMBER->SET_OPENCV(param); \
-}
-
 // BM only
-#if OPENCV3
-STEREO_IMAGE_PROC_ONLY_OPENCV3(block_matcher_, getPreFilterSize, setPreFilterSize, int, getPreFilterSize, setPreFilterSize)
-STEREO_IMAGE_PROC_ONLY_OPENCV3(block_matcher_, getTextureThreshold, setTextureThreshold, int, getTextureThreshold, setTextureThreshold)
-#else
 STEREO_IMAGE_PROC_BM_ONLY_OPENCV2(getPreFilterSize, setPreFilterSize, int, preFilterSize)
-STEREO_IMAGE_PROC_BM_ONLY_OPENCV2(getTextureThreshold, setTextureThreshold, int, textureThreshold)
-#endif
-
-// SGBM specific
-#if OPENCV3
-// getSgbmMode can return MODE_SGBM = 0, MODE_HH = 1. FullDP == 1 was MODE_HH so we're good
-STEREO_IMAGE_PROC_ONLY_OPENCV3(sg_block_matcher_, getSgbmMode, setSgbmMode, int, getMode, setMode)
-STEREO_IMAGE_PROC_ONLY_OPENCV3(sg_block_matcher_, getP1, setP1, int, getP1, setP1)
-STEREO_IMAGE_PROC_ONLY_OPENCV3(sg_block_matcher_, getP2, setP2, int, getP2, setP2)
-STEREO_IMAGE_PROC_ONLY_OPENCV3(sg_block_matcher_, getDisp12MaxDiff, setDisp12MaxDiff, int, getDisp12MaxDiff, setDisp12MaxDiff)
-#else
-STEREO_IMAGE_PROC_SGBM_ONLY_OPENCV2(getSgbmMode, setSgbmMode, int, fullDP)
-STEREO_IMAGE_PROC_SGBM_ONLY_OPENCV2(getP1, setP1, int, P1)
-STEREO_IMAGE_PROC_SGBM_ONLY_OPENCV2(getP2, setP2, int, P2)
-STEREO_IMAGE_PROC_SGBM_ONLY_OPENCV2(getDisp12MaxDiff, setDisp12MaxDiff, int, disp12MaxDiff)
-#endif
 
 } //namespace stereo_image_proc
 
