@@ -91,6 +91,24 @@ void StereoProcessor::setDisparityRange(int range)
 	gpu_block_matcher_.ndisp = range;
 }
 
+int StereoProcessor::getSpeckleSize() const
+{
+	return speckle_size_;
+}
+
+void StereoProcessor::setSpeckleSize(int size)
+{
+	speckle_size_ = size;
+}
+
+int StereoProcessor::getSpeckleRange() const
+{
+	return speckle_range_;
+}
+void StereoProcessor::setSpeckleRange(int range)
+{
+	speckle_range_ = range;
+}
 
 void StereoProcessor::processDisparity(const cv::Mat& left_rect, const cv::Mat& right_rect,
                                        const image_geometry::StereoCameraModel& model,
@@ -109,6 +127,7 @@ void StereoProcessor::processDisparity(const cv::Mat& left_rect, const cv::Mat& 
 
   gpu_block_matcher_(gpu_left_rect, gpu_right_rect, gpu_disparity_);
   gpu_disparity_.download(disparity16_);
+  filterSpeckles(disparity16_, 0, speckle_size_, speckle_range_, speckle_buf_);
 
   // Fill in DisparityImage image data, converting to 32-bit float
   sensor_msgs::Image& dimage = disparity.image;
